@@ -3,6 +3,8 @@ require 'open-uri'              # allows open('http://...') to return body
 require 'cgi'                   # for escaping URIs
 require 'nokogiri'              # XML parser
 require 'active_model'          # for validations
+require 'timeout'
+require 'net/http'
 
 class OracleOfBacon
 
@@ -20,13 +22,20 @@ class OracleOfBacon
   validate :from_does_not_equal_to
 
    def from_does_not_equal_to
-#    if @from == @to
-#      self.errors.add(:from, 'cannot be the same as To')
-#    end
+    if @from == @to
+      self.errors.add(:from, 'cannot be the same as To')
+    end
   end
 
   def initialize(api_key='')
-    # your code here
+    if(api_key != nil)
+      @api_key = api_key
+    else
+      raise InvalidKeyError
+    end
+    # Default to and from
+    @from = "Kevin Bacon"
+    @to = "Kevin Bacon"
   end
 
   def find_connections
@@ -41,14 +50,21 @@ class OracleOfBacon
       Net::ProtocolError => e
       # convert all of these into a generic OracleOfBacon::NetworkError,
       #  but keep the original error message
-      # your code here
+      raise NetworkError
+      puts e.backtrace
     end
     # your code here: create the OracleOfBacon::Response object
+    r = Response.new(xml)
+    return r.data
   end
 
   def make_uri_from_arguments
     # your code here: set the @uri attribute to properly-escaped URI
     # constructed from the @from, @to, @api_key arguments
+    tempTo = @to.gsub(' "','52+%22').gsub(' ','+')
+    tempFrom = @from.gsub(' "','52+%22').gsub(' ','+')
+    
+    @uri = "http://oracleofbacon.org/cgi-bin/xml?p=#{@api_key}/&a=#{tempTo}/&b=#{tempFrom}/"
   end
       
   class Response
@@ -74,8 +90,18 @@ class OracleOfBacon
     end
 
     def parse_error_response
-     #Your code here.  Assign @type and @data
-     # based on type attribute and body of the error element
+      temp = @doc.xpath('//error')
+      temp = temp.to_s
+      if temp.include?("badinput")
+        @type = :badinput
+        @data = "No query received"
+      elsif temp.include?("unlinkable")
+        @type = :unlinkable
+        @data = "There is no link"
+      elsif temp.include?("unauthorized")
+        @type = :unauthorized
+        @data = "unauthorized"
+      end
     end
 
     def parse_spellcheck_response
@@ -85,7 +111,12 @@ class OracleOfBacon
     end
 
     def parse_graph_response
-      #Your code here
+      @type = :graph
+      @data = @doc.xpath('//text()').map{ |info|
+        info.text
+      }
+      @data.delete("\n  ")
+      @data.delete("\n")
     end
 
     def parse_unknown_response
@@ -94,4 +125,3 @@ class OracleOfBacon
     end
   end
 end
-
